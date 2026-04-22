@@ -181,6 +181,7 @@ function initPills(cid, hid) {
 initPills('platformPills', 'platform');
 initPills('stylePills',    'style');
 initPills('formatPills',   'format');
+initPills('goalPills',     'goal');
 
 /* ════════════════════════════════════════════════════════════
    BUILD PROMPT — Lebih natural, kontekstual, dan spesifik
