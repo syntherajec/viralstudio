@@ -161,10 +161,6 @@ function switchTab(tab) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-document.querySelectorAll('.nav-tab, .bnav-btn').forEach(b => {
-  b.addEventListener('click', () => switchTab(b.dataset.tab));
-});
-
 /* ════════════════════════════════════════════════════════════
    PILLS
 ════════════════════════════════════════════════════════════ */
@@ -177,10 +173,6 @@ function initPills(cid, hid) {
     });
   });
 }
-initPills('platformPills', 'platform');
-initPills('stylePills',    'style');
-initPills('formatPills',   'format');
-
 /* ════════════════════════════════════════════════════════════
    BUILD PROMPT — ADVANCED PROMPT ENGINEERING v2
 ════════════════════════════════════════════════════════════ */
@@ -491,13 +483,10 @@ function parseAIResponse(text) {
   const e = cleaned.lastIndexOf('}');
   if (s !== -1 && e > s) {
     try { return JSON.parse(cleaned.slice(s, e + 1)); } catch {}
-  }
-
-  const fixed = cleaned.slice(s, e + 1)
-    .replace(/,\s*}/g, '}')
-    .replace(/,\s*]/g, ']')
-    .replace(/[\u0000-\u001F\u007F]/g, ' ');
-  if (s !== -1 && e > s) {
+    const fixed = cleaned.slice(s, e + 1)
+      .replace(/,\s*}/g, '}')
+      .replace(/,\s*]/g, ']')
+      .replace(/[\u0000-\u001F\u007F]/g, ' ');
     try { return JSON.parse(fixed); } catch {}
   }
 
@@ -507,7 +496,7 @@ function parseAIResponse(text) {
 /* ════════════════════════════════════════════════════════════
    POST-PROCESS — enrichment & cleanup hasil AI
 ════════════════════════════════════════════════════════════ */
-function postProcessResult(parsed, topic, target) {
+function postProcessResult(parsed, topic) {
   if (parsed.hooks && Array.isArray(parsed.hooks)) {
     parsed.hooks = parsed.hooks.map(h => {
       const text = String(h.text || '').trim();
@@ -618,7 +607,7 @@ async function generateContent() {
     }
 
     /* Tahap 3: Post-processing */
-    parsed = postProcessResult(parsed, topic, target);
+    parsed = postProcessResult(parsed, topic);
 
     /* Normalisasi data */
     const hooks = (parsed.hooks || []).map(h => ({
@@ -637,7 +626,21 @@ async function generateContent() {
 
     const caption = String(parsed.caption || '');
     const ideas   = (parsed.ideas || []).map((idea, i) => ({ no: i + 1, idea: String(idea) }));
-    const bonus   = parsed.bonus ? buildBonusFromText(String(parsed.bonus), format) : null;
+    const bonusRaw = parsed.bonus;
+    let bonusText = '';
+    if (bonusRaw !== null && bonusRaw !== undefined) {
+      if (typeof bonusRaw === 'string') {
+        bonusText = bonusRaw;
+      } else if (Array.isArray(bonusRaw)) {
+        bonusText = bonusRaw.map(item =>
+          typeof item === 'string' ? item : (item.text || item.content || JSON.stringify(item))
+        ).join('\n');
+      } else if (typeof bonusRaw === 'object') {
+        const vals = Object.values(bonusRaw);
+        bonusText = vals.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join('\n');
+      }
+    }
+    const bonus = bonusText ? buildBonusFromText(bonusText, format) : null;
 
     lastResult = {
       meta: {
@@ -910,22 +913,32 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') hideApiKeyModal();
 });
 
-$('btnGenerate').addEventListener('click', generateContent);
-$('btnApiKey').addEventListener('click', showApiKeyModal);
-$('btnSaveKey').addEventListener('click', saveApiKeyFromModal);
-$('btnCancelKey').addEventListener('click', hideApiKeyModal);
-$('apiKeyModal').addEventListener('click', e => {
-  if (e.target === $('apiKeyModal')) hideApiKeyModal();
-});
-
-$('apiKeyInput').addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-    e.preventDefault();
-    saveApiKeyFromModal();
-  }
-});
-
 window.addEventListener('DOMContentLoaded', () => {
+  /* Pills */
+  initPills('platformPills', 'platform');
+  initPills('stylePills',    'style');
+  initPills('formatPills',   'format');
+
+  /* Nav tabs */
+  document.querySelectorAll('.nav-tab, .bnav-btn').forEach(b => {
+    b.addEventListener('click', () => switchTab(b.dataset.tab));
+  });
+
+  /* Buttons */
+  $('btnGenerate').addEventListener('click', generateContent);
+  $('btnApiKey').addEventListener('click', showApiKeyModal);
+  $('btnSaveKey').addEventListener('click', saveApiKeyFromModal);
+  $('btnCancelKey').addEventListener('click', hideApiKeyModal);
+  $('apiKeyModal').addEventListener('click', e => {
+    if (e.target === $('apiKeyModal')) hideApiKeyModal();
+  });
+  $('apiKeyInput').addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      saveApiKeyFromModal();
+    }
+  });
+
   $('appScreen').style.display = '';
   $('bottomNav').style.display = '';
   updateApiKeyStatus();
