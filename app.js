@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════════════════════
-   VIRAL STUDIO PRO — app.js v8.0 AI Race Edition
-   Semua model dipanggil SERENTAK → yang pertama respond menang
-   Multi API Key support
+   VIRAL STUDIO PRO — app.js v8.0 Optimized Edition
+   - Prompt lebih natural & kontekstual (tidak kaku/generik)
+   - AI race lebih reliable dengan smarter retry logic
+   - Better JSON extraction & validation
    ═══════════════════════════════════════════════════════════ */
 
 if ('serviceWorker' in navigator) {
@@ -17,7 +18,7 @@ const HIST_KEY    = 'viralstudio_history';
 const APIKEYS_KEY = 'viralstudio_apikeys';
 const MAX_HIST    = 30;
 
-/* ── MODEL LIST (tersembunyi dari UI) ──────────────────────── */
+/* ── MODEL LIST ────────────────────────────────────────────── */
 const FREE_MODELS = [
   'nvidia/nemotron-3-super-120b-a12b:free',
   'arcee-ai/trinity-large-preview:free',
@@ -161,6 +162,10 @@ function switchTab(tab) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+document.querySelectorAll('.nav-tab, .bnav-btn').forEach(b => {
+  b.addEventListener('click', () => switchTab(b.dataset.tab));
+});
+
 /* ════════════════════════════════════════════════════════════
    PILLS
 ════════════════════════════════════════════════════════════ */
@@ -173,192 +178,144 @@ function initPills(cid, hid) {
     });
   });
 }
+initPills('platformPills', 'platform');
+initPills('stylePills',    'style');
+initPills('formatPills',   'format');
+
 /* ════════════════════════════════════════════════════════════
-   BUILD PROMPT — ADVANCED PROMPT ENGINEERING v2
+   BUILD PROMPT — Lebih natural, kontekstual, dan spesifik
 ════════════════════════════════════════════════════════════ */
-function buildPrompt(topic, target, platform, style, format, isRetry = false) {
-  const platformDesc = {
-    tiktok:    'TikTok (hook scroll-stopping di 1.5 detik pertama, bahasa Gen-Z Indonesia, energi tinggi, punchline tajam, durasi script 30-60 detik)',
-    instagram: 'Instagram (visual storytelling, aspirasional namun relatable, caption yang bikin audiens berhenti scroll dan simpan postingan)',
-    youtube:   'YouTube (opening pattern-interrupt kuat di 8 detik pertama, struktur problem-agitate-solve-payoff, durasi script 2-4 menit)',
+
+/**
+ * Menghasilkan variasi kata pembuka agar prompt tidak monoton
+ * setiap kali generate (mengurangi output yang terpola/template-ish)
+ */
+function randomVariant(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function buildPrompt(topic, target, platform, style, format) {
+
+  /* ── Deskripsi platform yang lebih natural ── */
+  const platformCtx = {
+    tiktok: `TikTok — audiens scrolling cepat, butuh hook di 1-2 detik pertama. Bahasa santai, anak muda, energi tinggi. Video pendek 15-60 detik. Tren dan sound culture sangat berpengaruh.`,
+    instagram: `Instagram — audiens yang lebih aspirasional dan curated. Caption bisa lebih panjang dan story-driven. Estetika visual penting. Cocok untuk soft selling dan brand building jangka panjang.`,
+    youtube: `YouTube — audiens datang dengan intent yang lebih tinggi, siap nonton lebih lama. Opening harus langsung menjawab "kenapa harus nonton ini". Struktur konten lebih terorganisir. Trust-building penting.`,
   }[platform] || platform;
 
-  const styleDesc = {
-    santai:   'santai dan conversational seperti curhat ke bestie — pakai "lo/gue", slang kekinian, tapi tetap ada punch di setiap kalimat',
-    tegas:    'tegas, no-nonsense, zero fluff — setiap kata harus bayar, gaya copywriter senior yang charge ratusan juta per project',
-    dramatis: 'dramatis dengan arc emosional — bangun tension, patah hati dulu, baru heal — bikin audiens merasa "ini gue banget"',
-    edukatif: 'edukatif berbasis data + storytelling — sajikan fakta mengejutkan dulu, baru explain, berakhir dengan insight yang bikin audiens merasa lebih pintar',
-    humor:    'humor yang cerdas dan unexpected — bukan receh, tapi witty dengan twist di akhir yang bikin audiens tag teman mereka',
+  /* ── Deskripsi style yang lebih hidup ── */
+  const styleCtx = {
+    santai: `Gaya ngobrol, seperti teman dekat yang kasih saran jujur. Pakai "lo/gue", natural, tidak ada kesan jualan. Hindari kata-kata baku atau kaku.`,
+    tegas: `Langsung ke inti, no fluff. Setiap kalimat harus punya bobot. Tidak ada basa-basi, tidak ada kata filler. Seperti founder yang ngomong langsung ke market-nya.`,
+    dramatis: `Emosional dan theatrical. Bangun ketegangan, pakai contrast (dulu vs sekarang, salah vs benar). Bikin audiens merasa cerita ini tentang mereka.`,
+    edukatif: `Tone seperti mentor yang sabar. Gunakan analogi konkret, fakta spesifik, dan struktur yang mudah diikuti. Audiens harus merasa lebih pintar setelah baca/nonton.`,
+    humor: `Witty, self-aware, kadang absurd tapi tetap nyambung ke topik. Timing humor penting — jangan dipaksain. Bisa pakai ironi atau exaggeration yang relatable.`,
   }[style] || style;
 
-  const bonusInstruction = {
-    thread:   `Untuk field "bonus": buat thread Twitter/X 6 tweet yang saling sambung dan viral-worthy. Format tiap tweet: "1/ [teks tweet pertama]\\n2/ [teks tweet kedua]\\n..." — pisahkan dengan newline. Tweet 1 harus hook kuat, tweet 6 harus CTA. Setiap tweet max 280 karakter. Sebut "${topic}" minimal 3x di seluruh thread.`,
-    carousel: `Untuk field "bonus": buat 6 slide carousel Instagram yang save-worthy. Format tiap slide: "Slide N: [judul slide]\\n[body teks slide]" — pisahkan dengan newline. Slide 1 = hook yang bikin orang swipe, Slide 6 = CTA. Setiap slide harus menyebut "${topic}" secara natural.`,
-    short:    `Untuk field "bonus": buat script short-form video 15-30 detik yang rewatch-worthy dalam 5 baris. Tiap baris = satu scene/cut dengan blocking action dan dialog. Format: "Scene N: [aksi] + [dialog/VO]". Hook di Scene 1 harus bikin orang batal skip.`,
-    standard: '',
+  /* ── Instruksi bonus format ── */
+  const bonusMap = {
+    thread: `Untuk field "bonus": Tulis thread Twitter/X terdiri dari 6 tweet. Setiap tweet harus standalone (bisa dimengerti sendiri) tapi mengalir secara narasi. Format: "1/ [teks]\n\n2/ [teks]\n\n..." dst. Jangan mulai semua tweet dengan pola yang sama.`,
+    carousel: `Untuk field "bonus": Buat 6 slide carousel Instagram. Slide 1 = hook yang bikin orang mau swipe. Slide 2-5 = isi yang progresif, makin dalam makin menarik. Slide 6 = CTA + cliffhanger. Format tiap slide: "Slide N: [teks slide]". Teks tiap slide maksimal 25 kata — harus bisa dibaca dalam 3 detik.`,
+    short: `Untuk field "bonus": Script video pendek 15-30 detik, dibagi 5 baris (1 baris = 1 scene/shot). Tiap baris format: "Scene N: [aksi + dialog/narasi]". Harus ada visual direction singkat di tiap scene.`,
+    standard: ``,
   }[format] || '';
 
   const needBonus = format !== 'standard';
 
-  const psychTriggers = `
-PSYCHOLOGICAL TRIGGERS YANG WAJIB DIPAKAI (pilih yang paling relevan per konten):
-- FEAR OF MISSING OUT: "Orang-orang yang belum tahu ${topic} ini sedang kehilangan X setiap hari"
-- CURIOSITY GAP: Mulai dengan pernyataan yang tidak lengkap, paksa audiens lanjut baca
-- SOCIAL PROOF + SPECIFICITY: Bukan "banyak orang" tapi "27.000 orang di Indonesia sudah X"
-- EGO TRIGGER: Buat audiens merasa lebih pintar/eksklusif karena mengetahui ${topic}
-- URGENCY REAL: Bukan fake countdown, tapi urgency berbasis konsekuensi nyata
-- PATTERN INTERRUPT: Mulai dengan sesuatu yang berlawanan dengan ekspektasi audiens`;
+  /* ── Framing variasi agar output tidak terpola ── */
+  const framings = [
+    `Bayangkan kamu adalah content strategist berpengalaman 8 tahun yang spesialis di pasar Indonesia. Klienmu datang dengan brief ini:`,
+    `Kamu sedang brainstorming konten untuk brand baru yang butuh penetrasi market cepat. Briefnya:`,
+    `Seorang kreator konten top Indonesia minta bantuanmu untuk campaign baru. Detail brief:`,
+  ];
+  const opening = randomVariant(framings);
 
-  const antiGenericRules = `
-LARANGAN KERAS — OUTPUT AKAN DITOLAK JIKA:
-❌ Menggunakan frasa: "produk ini sangat bagus", "sangat bermanfaat", "kualitas terjamin", "harga terjangkau", "cocok untuk semua"
-❌ Hook yang dimulai dengan: "Hei", "Hai teman-teman", "Assalamu'alaikum", "Perkenalkan"  
-❌ CTA generik: "follow akun kami", "kunjungi website kami", "hubungi kami sekarang"
-❌ Kalimat tanpa ${topic} — minimal 60% kalimat harus menyebut atau merujuk langsung ke "${topic}"
-❌ Ide konten yang bisa dipakai untuk produk/topik lain (harus hyper-specific ke "${topic}")
-❌ Caption yang terasa seperti template AI — harus punya voice, persona, dan sudut pandang`;
+  /* ── Contoh hook konkret sesuai topik (few-shot cue) ── */
+  // Ini mendorong model meniru struktur SPESIFIK bukan generik
+  const hookExamples = `
+Contoh hook yang BAGUS (spesifik, bukan generik):
+✅ "Kamu sudah buang uang 200rb/bulan buat skincare yang ternyata bikin kulitmu makin kusam" ← spesifik, ada angka, ada twist
+✅ "99% orang Jakarta tidak tahu cara benar pakai sunscreen — termasuk kamu yang baca ini sekarang" ← ada lokasi, ada challenge
+✅ "Teman kerjaku nanya kenapa kulitku glowing padahal budget perawatannya cuma 50rb seminggu" ← ada social proof, ada angka, relatable
 
-  const fewShotExample = `
-CONTOH OUTPUT BERKUALITAS TINGGI (untuk referensi tone dan specificity):
-Hook Fear: "Di Jakarta, setiap orang yang belum pakai ${topic} rata-rata rugi 2 jam produktivitas per hari — dan mereka bahkan tidak sadar."
-Hook Curiosity: "Satu hal tentang ${topic} yang tidak diajarkan di kelas manapun — tapi semua orang sukses yang gue kenal tahu ini."
-Script Opening: "[ACTION: ambil kamera, tatap langsung] Gue mau jujur sama lo soal ${topic}. Ini bukan review biasa. Ini tentang keputusan yang gue sesali 3 tahun karena gue tidak tahu ini lebih awal."
-Caption opening: "Tiga tahun lalu gue hampir nyerah. Bukan karena tidak usaha — tapi karena gue belum ketemu ${topic}. [lanjutkan dengan story spesifik...]"`;
+Contoh hook yang BURUK (generik, jangan ditiru):
+❌ "Apakah kamu ingin kulit yang lebih sehat dan bercahaya?"
+❌ "Produk ini akan mengubah hidupmu selamanya"
+❌ "Inilah rahasia yang tidak ingin diketahui orang lain"`;
 
-  const retryHardener = isRetry ? `
+  return `${opening}
 
-🚨 RETRY MODE — PROMPT INI DIULANG KARENA OUTPUT SEBELUMNYA KURANG BERKUALITAS 🚨
-Kali ini: LEBIH BERANI, LEBIH SPESIFIK, LEBIH EMOSIONAL. Tidak ada ruang untuk generic.
-Bayangkan kamu adalah copywriter terbaik Indonesia yang dibayar Rp 50 juta untuk konten ini.
-SETIAP KATA HARUS PUNYA FUNGSI. Hapus semua filler. Jangan ada kalimat yang tidak powerful.` : '';
+Produk/Topik: "${topic}"
+Target audiens: ${target}
+Platform: ${platformCtx}
+Tone & Gaya: ${styleCtx}
 
-  const systemContext = `Kamu adalah Arya Wibisono — copywriter dan content strategist Indonesia dengan 12 tahun pengalaman, mantan head of content di unicorn startup, yang sekarang freelance dengan rate Rp 50 juta per project. Kamu terkenal karena konten kamu SELALU viral dan TIDAK PERNAH generik. Kamu benci template. Setiap kata yang kamu tulis punya tujuan: stop the scroll, trigger emotion, drive action.`;
+${hookExamples}
 
-  return `${systemContext}
+BRIEF LENGKAP:
+Buat paket konten marketing yang tajam, spesifik, dan terasa MANUSIAWI untuk "${topic}". 
+Konten harus terasa seperti ditulis oleh orang yang benar-benar paham produk/topik ini — bukan template AI.
 
-BRIEF KONTEN:
-- Produk/Topik: "${topic}"
-- Target Audiens Spesifik: ${target}
-- Platform: ${platformDesc}
-- Tone of Voice: ${styleDesc}
-${psychTriggers}
-${antiGenericRules}
-${fewShotExample}
-${retryHardener}
+Aturan yang WAJIB diikuti:
+- Setiap hook harus mengandung minimal SATU dari: angka spesifik / nama lokasi / situasi konkret / twist yang tidak terduga
+- Script harus flow natural, tidak terasa seperti formula AIDA yang robotik
+- Caption harus punya "suara" — pembaca harus bisa merasakan personalitas di balik teks
+- Ideas harus eksekutable secara nyata, bukan ide abstrak
+- HINDARI frasa generik: "rahasia tersembunyi", "ubah hidupmu", "solusi terbaik", "produk berkualitas", "jangan lewatkan"
 
-INSTRUKSI TEKNIS:
-1. Keyword "${topic}" WAJIB muncul di: setiap hook, opening script, solution script, dan caption (natural, tidak kaku)
-2. Hooks harus ada pattern interrupt — jangan mulai dengan pertanyaan biasa
-3. Script harus punya micro-story (konflik → turning point → resolusi) dalam format problem-agitation-solution
-4. Caption harus punya: opening hook kuat → story/fakta menarik → soft sell → CTA spesifik → 8-10 hashtag relevan (minimal 150 kata total)
-5. Content ideas harus hyper-specific — tidak boleh bisa dipakai untuk topik lain
-6. Setiap elemen harus terasa ditulis oleh manusia berpengalaman, bukan AI
-
-STRICT JSON OUTPUT FORMAT:
-Balas HANYA dengan JSON valid. TIDAK ADA teks sebelum atau sesudah JSON. TIDAK ADA markdown. MULAI LANGSUNG dari karakter {
+Output: JSON valid saja. Tidak ada teks, penjelasan, komentar, atau markdown di luar JSON.
+Mulai langsung dari karakter {
 
 {
   "hooks": [
-    {"type": "⚠️ Fear", "tkey": "fear", "text": "hook fear scroll-stopping spesifik tentang ${topic} — bukan generic"},
-    {"type": "💡 Curiosity", "tkey": "curiosity", "text": "hook curiosity gap yang bikin audiens HARUS lanjut baca tentang ${topic}"},
-    {"type": "⏰ Urgency", "tkey": "urgency", "text": "hook urgency berbasis konsekuensi nyata tentang ${topic}"},
-    {"type": "🔍 Problem", "tkey": "problem", "text": "hook problem yang bikin ${target} merasa 'ini gue banget' terkait ${topic}"},
-    {"type": "🌟 Aspiration", "tkey": "aspiration", "text": "hook aspiration yang paint a picture kehidupan setelah pakai ${topic}"},
-    {"type": "👥 Social Proof", "tkey": "social", "text": "hook social proof dengan angka/data spesifik tentang ${topic}"},
-    {"type": "🏆 Authority", "tkey": "authority", "text": "hook authority yang establish kredibilitas ${topic} secara mengejutkan"},
-    {"type": "⚡ Contrast", "tkey": "contrast", "text": "hook before/after contrast yang dramatis antara yang pakai vs tidak pakai ${topic}"},
-    {"type": "🔐 Secret", "tkey": "secret", "text": "hook insider secret tentang ${topic} yang belum diketahui banyak orang"},
-    {"type": "💪 Challenge", "tkey": "challenge", "text": "hook challenge yang trigger ego audiens untuk buktikan diri terkait ${topic}"}
+    {"type": "⚠️ Fear", "text": "hook dengan angka atau situasi konkret tentang ${topic}"},
+    {"type": "💡 Curiosity", "text": "hook dengan twist atau info counter-intuitive tentang ${topic}"},
+    {"type": "⏰ Urgency", "text": "hook dengan deadline atau konteks waktu spesifik tentang ${topic}"},
+    {"type": "🔍 Problem", "text": "hook yang gambarkan masalah dengan detail sensorik tentang ${topic}"},
+    {"type": "🌟 Aspiration", "text": "hook dengan gambaran hasil konkret/spesifik tentang ${topic}"},
+    {"type": "👥 Social Proof", "text": "hook dengan social proof yang terasa nyata dan relatable tentang ${topic}"},
+    {"type": "🏆 Authority", "text": "hook berbasis data, riset, atau fakta menarik tentang ${topic}"},
+    {"type": "⚡ Contrast", "text": "hook dengan before-after atau perbandingan yang dramatis tentang ${topic}"},
+    {"type": "🔐 Secret", "text": "hook yang ungkap insight non-obvious tentang ${topic}"},
+    {"type": "💪 Challenge", "text": "hook yang challenge asumsi umum tentang ${topic}"}
   ],
   "script": {
-    "opening": "pattern-interrupt opening yang bikin audiens berhenti scroll — spesifik tentang ${topic}, dengan action direction jika perlu",
-    "problem": "masalah emosional dan fungsional yang SANGAT DIRASAKAN ${target} terkait ${topic} — bukan masalah generic",
-    "agitation": "pertegas dampak masalah tersebut dengan konsekuensi nyata yang painful — buat audiens merasa urgensi",
-    "solution": "posisikan ${topic} sebagai solusi dengan mekanisme yang jelas + bukti atau story singkat yang credible",
-    "cta": "call to action spesifik dan conversational untuk ${platform} — bukan 'follow kami' tapi action yang natural"
+    "opening": "kalimat pembuka yang langsung grab attention — boleh pakai pertanyaan retoris, stat mengejutkan, atau pernyataan berani tentang ${topic}",
+    "problem": "gambarkan masalah dengan detail yang bikin ${target} ngangguk-ngangguk karena merasa dipahami",
+    "agitation": "perbesar stakes-nya — apa yang terjadi kalau masalah ini dibiarkan? pakai visual language yang kuat",
+    "solution": "posisikan ${topic} sebagai solusi dengan cara yang terasa natural dan tidak hard-sell",
+    "cta": "CTA yang spesifik dan terasa mendesak tapi tidak memaksa — sesuaikan dengan behavior user di ${platform}"
   },
-  "caption": "caption 150-250 kata dengan: opening hook kuat (bukan 'Halo!') → micro-story personal atau insight mengejutkan → soft sell ${topic} yang terasa organic → CTA spesifik → newline → 8-10 hashtag relevan dan spesifik",
+  "caption": "caption lengkap 150-250 kata. Mulai dengan kalimat pembuka yang kuat (bukan 'Halo semuanya!'). Masukkan mini-story atau satu insight berharga. Soft selling yang terasa natural. Tutup dengan pertanyaan yang invite engagement. Sertakan 8-10 hashtag campuran (niche + medium + trending) yang relevan dengan ${topic} dan ${platform}.",
   "ideas": [
-    "ide konten 1: format spesifik + angle unik yang HANYA bisa untuk ${topic}",
-    "ide konten 2: format spesifik + angle unik yang HANYA bisa untuk ${topic}",
-    "ide konten 3: format spesifik + angle unik yang HANYA bisa untuk ${topic}",
-    "ide konten 4: format spesifik + angle unik yang HANYA bisa untuk ${topic}",
-    "ide konten 5: format spesifik + angle unik yang HANYA bisa untuk ${topic}"
-  ]${needBonus ? ',\n  "bonus": "placeholder"' : ''}
+    "ide konten 1: spesifik dengan format dan angle yang jelas untuk ${topic}",
+    "ide konten 2: spesifik dengan format dan angle yang jelas untuk ${topic}",
+    "ide konten 3: spesifik dengan format dan angle yang jelas untuk ${topic}",
+    "ide konten 4: spesifik dengan format dan angle yang jelas untuk ${topic}",
+    "ide konten 5: spesifik dengan format dan angle yang jelas untuk ${topic}"
+  ]${needBonus ? ',\n  "bonus": "konten bonus sesuai instruksi di bawah"' : ''}
 }
 
-${bonusInstruction}`;
+${bonusMap}`;
 }
 
 /* ════════════════════════════════════════════════════════════
-   VALIDATOR — cek kualitas output AI
+   VALIDATE PARSED RESULT — cek apakah output cukup bermakna
 ════════════════════════════════════════════════════════════ */
-const GENERIC_PHRASES = [
-  'produk ini sangat bagus', 'sangat bermanfaat', 'kualitas terjamin',
-  'harga terjangkau', 'cocok untuk semua', 'follow akun kami',
-  'kunjungi website kami', 'hubungi kami', 'hei teman', 'hai teman',
-  'perkenalkan produk', 'kami hadir untuk',
-];
-
-function countTopicMentions(text, topic) {
-  if (!topic || !text) return 0;
-  const escaped = topic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return (text.toLowerCase().match(new RegExp(escaped.toLowerCase(), 'g')) || []).length;
-}
-
-function validateOutput(parsed, topic) {
-  const issues = [];
-
-  if (!parsed.hooks || parsed.hooks.length < 8) {
-    issues.push('hooks kurang dari 8');
-  }
-
-  const hooksText = (parsed.hooks || []).map(h => h.text || '').join(' ');
-  if (countTopicMentions(hooksText, topic) < 5) {
-    issues.push('hooks tidak cukup menyebut topik');
-  }
-
-  const firstHook = parsed.hooks?.[0]?.text?.toLowerCase() || '';
-  if (firstHook.startsWith('hei') || firstHook.startsWith('hai') || firstHook.startsWith('halo') || firstHook.startsWith('apakah kamu') || firstHook.startsWith('apakah anda') || firstHook.length < 30) {
-    issues.push('hook pertama terlalu generik atau terlalu pendek');
-  }
-
-  const caption = String(parsed.caption || '');
-  const captionWords = caption.split(/\s+/).filter(Boolean).length;
-  if (captionWords < 120) {
-    issues.push(`caption terlalu pendek (${captionWords} kata, minimum 120)`);
-  }
-  if (countTopicMentions(caption, topic) < 2) {
-    issues.push('caption tidak menyebut topik');
-  }
-
-  const captionLower = caption.toLowerCase();
-  const genericFound = GENERIC_PHRASES.filter(p => captionLower.includes(p));
-  if (genericFound.length > 0) {
-    issues.push(`caption mengandung frasa generik: "${genericFound[0]}"`);
-  }
-
-  const scriptText = Object.values(parsed.script || {}).join(' ');
-  if (countTopicMentions(scriptText, topic) < 2) {
-    issues.push('script tidak cukup menyebut topik');
-  }
-
-  const scriptParts = ['opening', 'problem', 'agitation', 'solution', 'cta'];
-  const missingParts = scriptParts.filter(p => !parsed.script?.[p] || String(parsed.script[p]).length < 20);
-  if (missingParts.length > 0) {
-    issues.push(`script bagian terlalu pendek atau kosong: ${missingParts.join(', ')}`);
-  }
-
-  const ideas = parsed.ideas || [];
-  if (ideas.length < 4) {
-    issues.push('content ideas kurang dari 4');
-  }
-
-  return issues;
+function validateParsed(parsed) {
+  if (!parsed || typeof parsed !== 'object') return false;
+  const hooks = parsed.hooks;
+  if (!Array.isArray(hooks) || hooks.length < 3) return false;
+  // Minimal 3 hook harus punya teks yang cukup panjang
+  const validHooks = hooks.filter(h => h?.text && h.text.trim().length > 20);
+  if (validHooks.length < 3) return false;
+  if (!parsed.script?.opening || parsed.script.opening.trim().length < 20) return false;
+  if (!parsed.caption || parsed.caption.trim().length < 80) return false;
+  return true;
 }
 
 /* ════════════════════════════════════════════════════════════
-   SINGLE MODEL CALL — return text atau throw
+   SINGLE MODEL CALL
 ════════════════════════════════════════════════════════════ */
 function withTimeout(promise, ms, label) {
   const timer = new Promise((_, reject) =>
@@ -375,29 +332,30 @@ async function callOneModel(model, apiKey, prompt) {
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': (window.location.origin && window.location.origin !== 'null') ? window.location.origin : 'https://viralstudio.app',
+      'HTTP-Referer': (window.location.origin && window.location.origin !== 'null')
+        ? window.location.origin
+        : 'https://viralstudio.app',
       'X-Title': 'Viral Studio PRO',
     },
     body: JSON.stringify({
       model,
       messages: [
         {
+          // System message untuk reinforce JSON-only output
           role: 'system',
-          content: 'Kamu adalah copywriter viral Indonesia terbaik. Kamu HANYA merespons dengan JSON valid murni — tidak ada teks, penjelasan, atau markdown di luar JSON. Output kamu selalu dimulai dengan karakter { dan diakhiri dengan karakter }. Kamu tidak pernah menulis kalimat generik atau template.',
+          content: 'Kamu adalah content strategist Indonesia yang ahli. Selalu respond HANYA dengan JSON valid — tidak ada teks sebelum atau sesudah JSON. Tidak ada ```json``` wrapper. Mulai langsung dari karakter {',
         },
-        { role: 'user', content: prompt },
+        { role: 'user', content: prompt }
       ],
-      max_tokens: 3200,
-      temperature: 0.92,
-      top_p: 0.95,
-      frequency_penalty: 0.3,
-      presence_penalty: 0.2,
+      max_tokens: 3200,      // Dinaikkan agar caption + bonus tidak terpotong
+      temperature: 0.88,     // Sedikit lebih tinggi untuk hasil lebih variatif
+      top_p: 0.92,           // Tambah top_p untuk sampling yang lebih beragam
     }),
   });
 
   let res;
   try {
-    res = await withTimeout(fetchPromise, 20000, shortName);
+    res = await withTimeout(fetchPromise, 22000, shortName);
   } catch (err) {
     console.warn(`[${shortName}] fetch error:`, err.message);
     throw err;
@@ -413,9 +371,15 @@ async function callOneModel(model, apiKey, prompt) {
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content || '';
 
-  if (text.trim().length < 80) {
+  if (text.trim().length < 100) {
     console.warn(`[${shortName}] response terlalu pendek (${text.length} chars)`);
     throw new Error('Response terlalu pendek');
+  }
+
+  // Quick sanity check: harus ada struktur JSON dasar
+  if (!text.includes('"hooks"') || !text.includes('"script"')) {
+    console.warn(`[${shortName}] response tidak mengandung struktur yang diharapkan`);
+    throw new Error('Struktur JSON tidak valid');
   }
 
   console.log(`[${shortName}] ✓ sukses (${text.length} chars)`);
@@ -423,8 +387,7 @@ async function callOneModel(model, apiKey, prompt) {
 }
 
 /* ════════════════════════════════════════════════════════════
-   RACE ALL MODELS — semua dipanggil serentak
-   Jika Promise.any gagal semua → fallback sequential satu per satu
+   RACE ALL MODELS
 ════════════════════════════════════════════════════════════ */
 async function raceAllModels(prompt) {
   const keys = getApiKeys();
@@ -434,16 +397,16 @@ async function raceAllModels(prompt) {
 
   const promises = FREE_MODELS.map(model => {
     const key = pickRandomKey(keys);
-    return callOneModel(model, key, prompt).catch(err => {
-      return Promise.reject(new Error(`${model}: ${err.message}`));
-    });
+    return callOneModel(model, key, prompt).catch(err =>
+      Promise.reject(new Error(`${model}: ${err.message}`))
+    );
   });
 
   try {
     const result = await Promise.any(promises);
     console.log(`[Race] Winner:`, result.model);
     return result;
-  } catch (aggregateErr) {
+  } catch {
     console.warn('[Race] Semua serentak gagal, coba sequential fallback...');
     return sequentialFallback(prompt, keys);
   }
@@ -455,73 +418,61 @@ async function sequentialFallback(prompt, keys) {
     const shortName = model.split('/').pop().replace(':free','');
     try {
       console.log(`[Fallback] Mencoba ${shortName}...`);
-      const result = await withTimeout(callOneModel(model, key, prompt), 30000, shortName);
+      const result = await withTimeout(callOneModel(model, key, prompt), 32000, shortName);
       console.log(`[Fallback] Berhasil dengan ${shortName}`);
       return result;
     } catch (err) {
       console.warn(`[Fallback] ${shortName} gagal:`, err.message);
-      continue;
     }
   }
   throw new Error('ALL_MODELS_FAILED');
 }
 
 /* ════════════════════════════════════════════════════════════
-   PARSE AI RESPONSE
+   PARSE AI RESPONSE — lebih robust, multi-strategy
 ════════════════════════════════════════════════════════════ */
 function parseAIResponse(text) {
-  let cleaned = text.trim();
+  const cleaned = text.trim();
 
-  cleaned = cleaned.replace(/^[\s\S]*?(?=\{)/, '');
-
+  // Strategy 1: Direct parse
   try { return JSON.parse(cleaned); } catch {}
 
+  // Strategy 2: Strip markdown code fences
   const m1 = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (m1) { try { return JSON.parse(m1[1].trim()); } catch {} }
 
+  // Strategy 3: Extract outermost { ... }
   const s = cleaned.indexOf('{');
   const e = cleaned.lastIndexOf('}');
   if (s !== -1 && e > s) {
-    try { return JSON.parse(cleaned.slice(s, e + 1)); } catch {}
-    const fixed = cleaned.slice(s, e + 1)
-      .replace(/,\s*}/g, '}')
-      .replace(/,\s*]/g, ']')
-      .replace(/[\u0000-\u001F\u007F]/g, ' ');
-    try { return JSON.parse(fixed); } catch {}
+    const slice = cleaned.slice(s, e + 1);
+    try { return JSON.parse(slice); } catch {
+      // Strategy 4: Aggressive JSON repair untuk kasus trailing comma atau unclosed string
+      const repaired = repairJSON(slice);
+      try { return JSON.parse(repaired); } catch {}
+    }
   }
 
   throw new Error('Tidak bisa parse respons AI sebagai JSON');
 }
 
-/* ════════════════════════════════════════════════════════════
-   POST-PROCESS — enrichment & cleanup hasil AI
-════════════════════════════════════════════════════════════ */
-function postProcessResult(parsed, topic) {
-  if (parsed.hooks && Array.isArray(parsed.hooks)) {
-    parsed.hooks = parsed.hooks.map(h => {
-      const text = String(h.text || '').trim();
-      return { ...h, text };
-    }).filter(h => h.text.length > 10);
-  }
-
-  if (parsed.script) {
-    Object.keys(parsed.script).forEach(k => {
-      parsed.script[k] = String(parsed.script[k] || '').trim();
-    });
-  }
-
-  if (parsed.caption) {
-    parsed.caption = String(parsed.caption).trim();
-    if (!parsed.caption.includes('#')) {
-      parsed.caption += `\n\n#${topic.replace(/\s+/g,'').toLowerCase()} #kontenindonesia #viral`;
-    }
-  }
-
-  if (parsed.ideas && Array.isArray(parsed.ideas)) {
-    parsed.ideas = parsed.ideas.map(idea => String(idea).trim()).filter(i => i.length > 10);
-  }
-
-  return parsed;
+/**
+ * Perbaikan ringan untuk JSON yang hampir valid:
+ * - Hapus trailing comma sebelum } atau ]
+ * - Tutup string yang tidak ter-close (edge case model kepotong)
+ */
+function repairJSON(str) {
+  // Hapus trailing commas
+  let fixed = str.replace(/,\s*([\]}])/g, '$1');
+  // Jika JSON tidak closed di akhir, coba tutup paksa
+  // (hanya untuk kasus output terpotong)
+  const opens = (fixed.match(/\{/g) || []).length;
+  const closes = (fixed.match(/\}/g) || []).length;
+  for (let i = 0; i < opens - closes; i++) fixed += '}';
+  const opensArr = (fixed.match(/\[/g) || []).length;
+  const closesArr = (fixed.match(/\]/g) || []).length;
+  for (let i = 0; i < opensArr - closesArr; i++) fixed += ']';
+  return fixed;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -556,65 +507,42 @@ async function generateContent() {
     '<span class="ms-racing">⚡ Menghubungi AI — mohon tunggu 10-30 detik…</span>';
 
   try {
-    const prompt = buildPrompt(topic, target, platform, style, format, false);
-    const { text: rawText, model } = await raceAllModels(prompt);
+    const prompt = buildPrompt(topic, target, platform, style, format);
+    let { text: rawText, model } = await raceAllModels(prompt);
     winnerModel = model;
 
-    $('modelStatus').innerHTML = '<span class="ms-ok">✓ Konten berhasil digenerate</span>';
+    $('modelStatus').innerHTML = '<span class="ms-ok">✓ Memproses konten…</span>';
 
     let parsed;
-
-    /* Tahap 1: Parse JSON */
     try {
       parsed = parseAIResponse(rawText);
     } catch {
-      toast('🔄 Memproses ulang format…', 1500);
-      const retryFormatPrompt = buildPrompt(topic, target, platform, style, format, false) +
-        '\n\n🚨 PENTING: Output HANYA JSON murni. Mulai LANGSUNG dari { tanpa teks apapun sebelumnya.';
-      const retryFormat = await raceAllModels(retryFormatPrompt);
-      parsed = parseAIResponse(retryFormat.text);
-      winnerModel = retryFormat.model;
+      // Retry dengan prompt yang lebih strict
+      toast('🔄 Memformat ulang respons AI…', 1500);
+      const strictPrompt = buildPrompt(topic, target, platform, style, format)
+        + '\n\n⚠️ PENTING: Output HANYA karakter JSON. Tidak ada teks apapun di luar JSON. Tidak ada komentar. Mulai dengan { dan akhiri dengan }';
+      const retry = await raceAllModels(strictPrompt);
+      parsed = parseAIResponse(retry.text);
+      winnerModel = retry.model;
     }
 
-    /* Tahap 2: Validasi kualitas output */
-    const qualityIssues = validateOutput(parsed, topic);
-    if (qualityIssues.length > 0) {
-      console.warn('[Validate] Isu kualitas ditemukan:', qualityIssues);
+    // Validasi kualitas — jika output terlalu generik/pendek, retry
+    if (!validateParsed(parsed)) {
+      console.warn('[Generate] Output tidak lolos validasi kualitas, retry...');
       toast('🔄 Meningkatkan kualitas output…', 2000);
-
-      $('modelStatus').innerHTML = '<span class="ms-racing">🔄 Optimasi kualitas konten…</span>';
-
-      const retryQualityPrompt = buildPrompt(topic, target, platform, style, format, true) +
-        `\n\n⚠️ ISU YANG HARUS DIPERBAIKI:\n${qualityIssues.map((iss, i) => `${i+1}. ${iss}`).join('\n')}`;
-
-      try {
-        const retryQuality = await raceAllModels(retryQualityPrompt);
-        const retryParsed = parseAIResponse(retryQuality.text);
-        const retryIssues = validateOutput(retryParsed, topic);
-
-        if (retryIssues.length < qualityIssues.length) {
-          parsed = retryParsed;
-          winnerModel = retryQuality.model;
-          console.log('[Validate] Retry berhasil meningkatkan kualitas');
-        } else {
-          console.warn('[Validate] Retry tidak meningkatkan kualitas, pakai hasil pertama');
-        }
-      } catch (retryErr) {
-        console.warn('[Validate] Retry gagal, pakai hasil pertama:', retryErr.message);
-      }
-
-      $('modelStatus').innerHTML = '<span class="ms-ok">✓ Konten berhasil digenerate</span>';
+      const qualityPrompt = buildPrompt(topic, target, platform, style, format)
+        + `\n\n🚨 PERHATIAN: Generate ulang dengan lebih spesifik. Setiap hook HARUS punya detail konkret (angka, nama tempat, atau situasi nyata) tentang "${topic}". Jangan generik.`;
+      const retry2 = await raceAllModels(qualityPrompt);
+      parsed = parseAIResponse(retry2.text);
+      winnerModel = retry2.model;
     }
-
-    /* Tahap 3: Post-processing */
-    parsed = postProcessResult(parsed, topic);
 
     /* Normalisasi data */
     const hooks = (parsed.hooks || []).map(h => ({
       type: h.type || '💡 Hook',
-      tkey: h.tkey || hookTypeToKey(h.type || ''),
+      tkey: hookTypeToKey(h.type || ''),
       text: h.text || '',
-    })).filter(h => h.text.trim());
+    })).filter(h => h.text.trim().length > 5);
 
     const script = {
       opening:   String(parsed.script?.opening   || ''),
@@ -626,21 +554,7 @@ async function generateContent() {
 
     const caption = String(parsed.caption || '');
     const ideas   = (parsed.ideas || []).map((idea, i) => ({ no: i + 1, idea: String(idea) }));
-    const bonusRaw = parsed.bonus;
-    let bonusText = '';
-    if (bonusRaw !== null && bonusRaw !== undefined) {
-      if (typeof bonusRaw === 'string') {
-        bonusText = bonusRaw;
-      } else if (Array.isArray(bonusRaw)) {
-        bonusText = bonusRaw.map(item =>
-          typeof item === 'string' ? item : (item.text || item.content || JSON.stringify(item))
-        ).join('\n');
-      } else if (typeof bonusRaw === 'object') {
-        const vals = Object.values(bonusRaw);
-        bonusText = vals.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join('\n');
-      }
-    }
-    const bonus = bonusText ? buildBonusFromText(bonusText, format) : null;
+    const bonus   = parsed.bonus ? buildBonusFromText(String(parsed.bonus), format) : null;
 
     lastResult = {
       meta: {
@@ -652,6 +566,8 @@ async function generateContent() {
 
     renderResults(lastResult);
     saveHistory(lastResult);
+
+    $('modelStatus').innerHTML = '<span class="ms-ok">✓ Konten berhasil digenerate</span>';
     toast('🎉 Konten AI berhasil digenerate!');
 
   } catch (err) {
@@ -668,7 +584,6 @@ async function generateContent() {
     } else {
       toast('❌ ' + String(err.message).slice(0, 80), 5000);
     }
-    console.error('[Generate] Detail error:', err);
   } finally {
     isLoading = false;
     $('btnGenerate').disabled = false;
@@ -719,7 +634,7 @@ function renderResults(data) {
   else { const b = $('bonusCard'); if (b) b.style.display = 'none'; }
 
   const res = $('results');
-  res.style.display      = 'flex';
+  res.style.display       = 'flex';
   res.style.flexDirection = 'column';
   setTimeout(() => res.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 }
@@ -861,6 +776,7 @@ function saveHistory(data) {
   });
   try { localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, MAX_HIST))); } catch {}
 }
+
 function loadHistory() {
   try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch { return []; }
 }
@@ -913,32 +829,22 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') hideApiKeyModal();
 });
 
+$('btnGenerate').addEventListener('click', generateContent);
+$('btnApiKey').addEventListener('click', showApiKeyModal);
+$('btnSaveKey').addEventListener('click', saveApiKeyFromModal);
+$('btnCancelKey').addEventListener('click', hideApiKeyModal);
+$('apiKeyModal').addEventListener('click', e => {
+  if (e.target === $('apiKeyModal')) hideApiKeyModal();
+});
+
+$('apiKeyInput').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    saveApiKeyFromModal();
+  }
+});
+
 window.addEventListener('DOMContentLoaded', () => {
-  /* Pills */
-  initPills('platformPills', 'platform');
-  initPills('stylePills',    'style');
-  initPills('formatPills',   'format');
-
-  /* Nav tabs */
-  document.querySelectorAll('.nav-tab, .bnav-btn').forEach(b => {
-    b.addEventListener('click', () => switchTab(b.dataset.tab));
-  });
-
-  /* Buttons */
-  $('btnGenerate').addEventListener('click', generateContent);
-  $('btnApiKey').addEventListener('click', showApiKeyModal);
-  $('btnSaveKey').addEventListener('click', saveApiKeyFromModal);
-  $('btnCancelKey').addEventListener('click', hideApiKeyModal);
-  $('apiKeyModal').addEventListener('click', e => {
-    if (e.target === $('apiKeyModal')) hideApiKeyModal();
-  });
-  $('apiKeyInput').addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      saveApiKeyFromModal();
-    }
-  });
-
   $('appScreen').style.display = '';
   $('bottomNav').style.display = '';
   updateApiKeyStatus();
